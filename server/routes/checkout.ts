@@ -559,6 +559,21 @@ router.post("/", async (req, res) => {
       gatewayResults.push(gatewayOutcome as any);
       const orderState = mapOrderStateFromGateway(gatewayOutcome);
 
+      // Enterprise Phase 1: Wakala Commission Calculation
+      let orderBrokerId: string | null = null;
+      let orderBrokerCommission = 0;
+      
+      sellerItems.forEach((c: any) => {
+        if (c.product.brokerId && c.product.brokerCommissionPercent) {
+          orderBrokerId = c.product.brokerId;
+          const itemPrice = getProductPriceForQty(c.product, c.quantity);
+          const qty = parseInt(c.quantity, 10) || 1;
+          const itemTotal = itemPrice * qty;
+          const comm = (itemTotal * parseFloat(c.product.brokerCommissionPercent)) / 100;
+          orderBrokerCommission += comm;
+        }
+      });
+
       const { data: oRow, error: oError } = await supabase
         .from("orders")
         .insert([{
@@ -572,6 +587,8 @@ router.post("/", async (req, res) => {
           payment_method_name: paymentRoute.paymentCategory,
           total: sellerTotal,
           status: orderState.dbStatus,
+          broker_id: orderBrokerId,
+          broker_commission_amount: orderBrokerCommission,
           delivery_zone_id: selectedZoneId || null,
           delivery_zone_name: resolvedDeliveryZoneName,
           delivery_fee: entryIndex === 0 ? deliveryFeeAmount : 0,
@@ -606,10 +623,30 @@ router.post("/", async (req, res) => {
       );
 
       const stockUpdatePromises = sellerItems.map((c: any) => {
-        const newStock = Math.max(0, c.currentStock - (parseInt(c.quantity, 10) || 1));
+        const qty = parseInt(c.quantity, 10) || 1;
+        const newStock = Math.max(0, c.currentStock - qty);
         return supabase.from("products").update({ stock: newStock }).eq("id", c.dbProductId);
       });
       await Promise.all(stockUpdatePromises);
+      
+      // Enterprise: Immutable Inventory Ledger
+      try {
+        const movementPromises = sellerItems.map((c: any) => {
+          const qty = parseInt(c.quantity, 10) || 1;
+          return supabase.from("inventory_movements").insert({
+            product_id: c.dbProductId,
+            movement_type: 'sale',
+            quantity_change: -qty,
+            reference_id: `order_${oRow.id}`,
+            actor_id: (req as any).user?.id || null,
+            notes: `Sold in order ${oId}`
+          });
+        });
+        await Promise.all(movementPromises);
+      } catch (movErr: any) {
+        console.error("[Inventory Ledger] Failed to create movement record for checkout:", movErr.message || movErr);
+      }
+
       successfulOrders.push({ oId, orderRowId: oRow.id, sellerId, sellerTotal, sellerItems, grossTotal: entry.grossTotal });
     }
 

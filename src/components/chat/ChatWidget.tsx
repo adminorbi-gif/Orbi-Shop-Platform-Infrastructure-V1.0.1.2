@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 // UI: Chat Widget
 import { MessageSquare, Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -108,6 +108,29 @@ export function ChatWidget({
     }
   };
 
+  const handleNewMessage = useCallback((message: ChatMessage) => {
+    // 1. Play sound if it's from someone else and unread
+    if (message.senderId !== currentUserId && !message.isRead) {
+      playNotificationChime();
+    }
+    
+    // 2. Update the conversations list to reflect unread counts and last message
+    setConversations(prev => {
+      const updated = prev.map(c => {
+        if (c.id === message.conversationId) {
+          const newC = { ...c, lastMessage: message.content, lastMessageAt: message.timestamp };
+          if (activeConversation?.id !== message.conversationId && message.senderId !== currentUserId) {
+            newC.unreadCount = { ...c.unreadCount, [currentUserId]: (c.unreadCount?.[currentUserId] || 0) + 1 };
+          }
+          return newC;
+        }
+        return c;
+      });
+      // Sort conversations so the one with the latest message moves to the top
+      return updated.sort((a, b) => (b.lastMessageAt || b.createdAt) - (a.lastMessageAt || a.createdAt));
+    });
+  }, [currentUserId, activeConversation?.id]);
+
   const handleSetActiveConversation = (conv: Conversation | null) => {
     if (onActiveConversationChange) {
       onActiveConversationChange(conv);
@@ -165,7 +188,7 @@ export function ChatWidget({
     sendMessage,
     emitMessagesRead,
     setMessages 
-  } = useWebSocket(currentUserId);
+  } = useWebSocket(currentUserId, activeConversation?.id, handleNewMessage);
 
   useEffect(() => {
     loadConversations();
@@ -173,24 +196,9 @@ export function ChatWidget({
 
   useEffect(() => {
     if (activeConversation) {
-      joinConversation(activeConversation.id);
       loadMessages(activeConversation.id);
     }
-    return () => {
-      if (activeConversation) leaveConversation(activeConversation.id);
-    };
-  }, [activeConversation, joinConversation, leaveConversation]);
-
-  // Audio notifier upon receiving new message
-  useEffect(() => {
-    if (messages.length > 0) {
-      const lastMsg = messages[messages.length - 1];
-      // Only play sound if it is from the other participant and was just received
-      if (lastMsg && lastMsg.senderId !== currentUserId && !lastMsg.isRead) {
-        playNotificationChime();
-      }
-    }
-  }, [messages, currentUserId]);
+  }, [activeConversation]);
 
   const getNormalizedParticipantId = (p: { id: string; name?: string }): string => {
     if (p.id === "support" || p.id === "admin" || p.name?.toLowerCase().includes("support") || p.name?.toLowerCase().includes("mhudumu")) {
@@ -256,6 +264,10 @@ export function ChatWidget({
       const data = await fetchConversations(currentUserId, currentUserRole);
       const deduplicated = deduplicateConversations(data);
       setConversations(deduplicated);
+      
+      // Join all conversations so we can receive real-time updates for any of them
+      deduplicated.forEach((c: Conversation) => joinConversation(c.id));
+      
       if (targetConversationId) {
          const target = deduplicated.find((c: Conversation) => c.id === targetConversationId);
          if (target) handleSetActiveConversation(target);
@@ -272,6 +284,7 @@ export function ChatWidget({
                 { id: currentUserId, role: currentUserRole, name: currentUserName, avatar: currentUserAvatar },
                 { id: targetParticipantId, role: targetParticipantId === "support" ? "admin" : "seller", name: targetParticipantId === "support" ? "Orbi Shop Support Team" : (targetParticipantName || "Store"), avatar: targetParticipantId === "support" ? "https://media-stock.orbifinancial.com/OrbiShop_Logo_Blue.png" : (targetParticipantAvatar || "") } // We might not have all details of seller here, but the backend will just store the JSON
             ]);
+            joinConversation(newConv.id);
             setConversations(prev => deduplicateConversations([newConv, ...prev]));
             handleSetActiveConversation(newConv);
          }

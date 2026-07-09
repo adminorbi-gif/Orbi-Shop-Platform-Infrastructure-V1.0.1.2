@@ -7,6 +7,7 @@ import { OrbiBootSplash, PwaExperience } from './components/PwaExperience';
 
 const ClientApp = lazyWithRetry(() => import('./pages/ClientApp'));
 const AdminApp = lazyWithRetry(() => import('./pages/AdminApp'));
+const WakalaApp = lazyWithRetry(() => import('./pages/WakalaApp'));
 
 export default function App() {
   const location = useLocation();
@@ -29,6 +30,10 @@ export default function App() {
               <Route path="/sellers/signup" element={<AdminApp />} />
               <Route path="/sellers/dashboard" element={<AdminApp />} />
               
+              {/* Wakala Routes */}
+              <Route path="/wakalas/*" element={<WakalaApp />} />
+              <Route path="/wakalas" element={<WakalaApp />} />
+
               {/* Admin Routes */}
               <Route path="/admin/*" element={<AdminApp />} />
               

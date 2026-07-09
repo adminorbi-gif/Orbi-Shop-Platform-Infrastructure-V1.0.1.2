@@ -253,6 +253,8 @@ router.get("/", async (req, res) => {
         wholesaleTiers: Array.isArray(p.wholesale_tiers) ? p.wholesale_tiers : [],
         weightKg: Number(p.weight_kg || 1),
         lengthCm: p.length_cm === null || p.length_cm === undefined ? undefined : Number(p.length_cm),
+        brokerId: p.broker_id || undefined,
+        brokerCommissionPercent: p.broker_commission_percent ? Number(p.broker_commission_percent) : 0,
         widthCm: p.width_cm === null || p.width_cm === undefined ? undefined : Number(p.width_cm),
         heightCm: p.height_cm === null || p.height_cm === undefined ? undefined : Number(p.height_cm),
         deliveryClass: p.delivery_class || 'standard',
@@ -351,6 +353,8 @@ router.post("/", requireAuth, requireRole("admin", "seller"), async (req, res) =
         seller_origin_zone_id: product.sellerOriginZoneId || null,
         tags: finalTags,
         images: product.images,
+        broker_id: product.brokerId || null,
+        broker_commission_percent: Number(product.brokerCommissionPercent || 0),
         legacy_id: product.id?.includes('-') ? product.id : undefined
       };
       if (withVisible) {
@@ -382,6 +386,25 @@ router.post("/", requireAuth, requireRole("admin", "seller"), async (req, res) =
     if (result.error) throw result.error;
     clearCachedValue("products:");
     const nextStock = normalizeProductStock(result.data?.stock ?? product.stock);
+    
+    // Enterprise: Immutable Inventory Ledger
+    if (!isExistingProduct || previousStock !== nextStock) {
+      try {
+        const movementType = !isExistingProduct ? 'in' : (nextStock > previousStock ? 'adjustment' : 'adjustment');
+        const quantityChange = !isExistingProduct ? nextStock : (nextStock - previousStock);
+        await supabase.from('inventory_movements').insert({
+          product_id: result.data?.id || product.id,
+          movement_type: movementType,
+          quantity_change: quantityChange,
+          reference_id: 'admin_dashboard_update',
+          actor_id: (req as any).user?.id || null,
+          notes: 'Stock updated via admin dashboard'
+        });
+      } catch (movErr: any) {
+        console.error("[Inventory Ledger] Failed to create movement record:", movErr.message || movErr);
+      }
+    }
+
     const nextPrice = normalizeMoney(result.data?.price ?? product.price);
     if (previousStock <= 0 && nextStock > 0) {
       dispatchBackInStockNotifications(result.data).catch((notifyErr) => {
@@ -486,26 +509,38 @@ router.post("/ai-suggest-description", requireAuth, requireRole("admin", "seller
     }
 
     const ai = getGemini();
-    const prompt = `You are a professional e-commerce copywriter in Tanzania. Write a compelling, high-converting product description for:
+    const prompt = `You are a professional e-commerce copywriter in Tanzania. Write a compelling, high-converting product description and a list of key technical or comparative features for:
 - Product Name: ${name}
 - Niche Scope: ${niche || "General"}
 - Sub-category: ${category || "General"}
 - Extra keywords/tags: ${tags ? tags.join(", ") : "None"}
 
 Requirements:
-1. Provide a beautiful bilingual layout: first a passionate block in friendly, engaging Swahili/Kiswahili, followed by an elegant block in English.
-2. The description should detail its premium quality, utility, and appeal to Tanzanian shoppers.
-3. Total word count should be around 100-150 words.
-4. Format with clean line breaks so it looks professional in a store product detail box.
-5. Use bullet points for key features if applicable.
-6. Do not wrap code in any markdown backticks or extra json wrapper, just output the plain text description raw.`;
+1. "description": Provide a beautiful bilingual layout: first a passionate block in friendly, engaging Swahili/Kiswahili, followed by an elegant block in English. The description should detail its premium quality, utility, and appeal to Tanzanian shoppers. Total word count should be around 100-150 words. Format with clean line breaks so it looks professional in a store product detail box. Use bullet points for key features if applicable within the description block.
+2. "features": Generate 3 to 6 key comparative features (specs) that a buyer would look for in a comparison table for this type of product. Each feature should have a "name" (e.g., "Voltage", "Material", "Storage Capacity") and a "description" (e.g., "220V AC", "Premium Leather", "256GB SSD").
+
+Respond ONLY with a valid JSON object matching this schema:
+{
+  "description": "The product description string...",
+  "features": [
+    { "name": "Feature Name", "description": "Feature Value" }
+  ]
+}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
     });
 
-    res.json({ success: true, description: response.text });
+    try {
+      const data = JSON.parse(response.text);
+      res.json({ success: true, description: data.description, features: data.features });
+    } catch (e) {
+      res.json({ success: true, description: response.text });
+    }
   } catch (error: any) {
     console.error("POST /api/v1/products/ai-suggest-description error:", error.message);
     res.status(500).json({ success: false, error: error.message });
@@ -540,8 +575,8 @@ Here are the store's currently configured Niches, Categories, and Families:
 ${formattedNiches || "None configured yet"}
 
 Your goal:
-1. Identify the absolute best Niche, Category, and Family match from the existing list above.
-2. If absolutely none of the existing matches fit, suggest a highly accurate custom Niche, Category, and Family.
+1. Identify the absolute best Niche, Category, and Family match ONLY from the existing list provided above.
+2. Do NOT suggest new, custom, or made-up Niches, Categories, or Families under any circumstances. You must strictly select the closest available options from the provided list.
 3. Recommend the most appropriate Arrangement Tier based on the price point and exclusivity:
    - "standard": Budget-friendly, basic or standard essential products.
    - "premium": High-quality, artistic, or premium Tier products.

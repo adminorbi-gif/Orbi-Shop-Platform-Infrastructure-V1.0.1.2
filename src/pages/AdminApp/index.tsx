@@ -267,6 +267,7 @@ import { LoadingOverlay } from "../../components/LoadingOverlay";
 
 const AdvancedSellerAnalytics = lazyWithRetry(() => import('./components').then(m => ({ default: m.AdvancedSellerAnalytics })));
 const SellersAdmin = lazyWithRetry(() => import('./components').then(m => ({ default: m.SellersAdmin })));
+const WakalasAdmin = lazyWithRetry(() => import('./components').then(m => ({ default: m.WakalasAdmin })));
 const PayoutsAdmin = lazyWithRetry(() => import('./components').then(m => ({ default: m.PayoutsAdmin })));
 const StatCard = lazyWithRetry(() => import('./components').then(m => ({ default: m.StatCard })));
 const StockNotificationsAdmin = lazyWithRetry(() => import('./components').then(m => ({ default: m.StockNotificationsAdmin })));
@@ -435,7 +436,14 @@ export const OrderItemRow = React.memo(function OrderItemRow({
           ))}
         </ul>
       </td>
-      <td className="p-4 font-bold">{formatCurrency(order.total)}</td>
+      <td className="p-4 font-bold">
+        <div>{formatCurrency(order.total)}</div>
+        {!!order.brokerCommissionAmount && order.brokerCommissionAmount > 0 && (
+          <div className="text-[10px] text-amber-600 font-semibold mt-1 bg-amber-50 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 border border-amber-200">
+            Wakala: {formatCurrency(order.brokerCommissionAmount)}
+          </div>
+        )}
+      </td>
       <td className="p-4 whitespace-nowrap min-w-[125px]">
         <motion.span
           key={order.status}
@@ -891,6 +899,8 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     | "visitors-analytics"
     | "talk-logs"
     | "payment-logs"
+    | "wakalas"
+    | "seller_settings"
   >("dashboard");
 
   // App UI State
@@ -2847,6 +2857,11 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       icon: Store,
                       badge: sellersNotificationCount,
                     },
+                    {
+                      id: "wakalas",
+                      label: lang === "sw" ? "Mawakala" : "Wakalas",
+                      icon: Briefcase,
+                    },
                     { id: "staff", label: "Staff", icon: Users },
                     { id: "payouts", label: "Payouts", icon: DollarSign },
                     { id: "notifications", label: "Notifications", icon: Bell },
@@ -3028,6 +3043,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                     { id: "coupons", label: "Coupon", icon: Ticket },
                     { id: "ads", label: "Ads", icon: Megaphone },
                     { id: "sellers", label: "Wauzaji", icon: Store, badge: sellersNotificationCount },
+                    { id: "wakalas", label: "Wakalas", icon: Briefcase },
                     { id: "staff", label: "Staff", icon: Users },
                     { id: "payouts", label: "Payouts", icon: DollarSign },
                     { id: "notifications", label: "Noti", icon: Bell },
@@ -3829,6 +3845,16 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                 />
               </div>
             )}
+            {tab === "wakalas" && (
+              <div className="flex-1">
+                <WakalasAdmin
+                  products={products}
+                  orders={orders}
+                  lang={lang}
+                />
+              </div>
+            )}
+
             {tab === "campaigns" && (
               <div className="flex-1">
                 <CampaignsAdmin />

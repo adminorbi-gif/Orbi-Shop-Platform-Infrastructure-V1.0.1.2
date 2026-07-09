@@ -13,6 +13,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { Server as SocketIOServer } from "socket.io";
+import { GoogleGenAI } from "@google/genai";
 
 import { supabase } from "./server/lib/supabase.js";
 import helmet from "helmet";
@@ -494,6 +495,90 @@ async function startServer() {
   app.use("/api/v1/subscriptions", looseLimiter, subscriptionsRouter);
   app.use("/api/talk", looseLimiter, talkRouter);
   app.use("/api/v1/tra", looseLimiter, traRouter);
+
+  // AI Listing Generator Endpoint
+  app.post("/api/v1/ai/generate-listing", express.json({ limit: "10mb" }), async (req, res) => {
+    try {
+      const { imageBase64 } = req.body;
+      if (!imageBase64) return res.status(400).json({ error: "Missing imageBase64" });
+      
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        // Mock fallback if no key
+        return res.json({
+           title: "Awesome Product",
+           nameSw: "Bidhaa Nzuri",
+           category: "general",
+           description: "A great product for everyday use.",
+           descriptionSw: "Bidhaa nzuri kwa matumizi ya kila siku.",
+           tags: ["new", "quality"],
+           price: 10000
+        });
+      }
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `You are an expert Tanzanian marketplace assistant. 
+Analyze the provided product image and generate a JSON object with the following fields:
+- title (English name)
+- nameSw (Swahili name)
+- category (One of: electronics, fashion, home, health, auto, supermarket, other)
+- description (English description)
+- descriptionSw (Swahili description)
+- tags (array of 3-5 keywords)
+- price (estimated price in TZS as an integer, if possible, else 0).
+
+Output only the raw JSON.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-pro",
+        contents: [
+          prompt,
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: imageBase64.replace(/^data:image\/\w+;base64,/, "")
+            }
+          }
+        ]
+      });
+
+      let text = response.text || "{}";
+      text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      const parsed = JSON.parse(text);
+      res.json(parsed);
+    } catch (e: any) {
+      console.error("AI Listing Error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // AI Negotiation Agent Endpoint for RFQ
+  app.post("/api/v1/ai/negotiate", async (req, res) => {
+    try {
+      const { currentOffer, walkAwayPrice, buyerMessage, previousMessages } = req.body;
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) return res.json({ reply: "I cannot go lower than my best price.", newOffer: currentOffer });
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `You are a B2B AI Negotiation Agent for a Tanzanian wholesaler. 
+Your minimum walk-away price is ${walkAwayPrice} TZS. The buyer's current offer is in the chat.
+Respond professionally in Swahili or English. If the buyer's offer is above the walk-away price, you can accept it or counter-offer slightly higher. If below, reject and counter with something closer to the walk-away price.
+Return a JSON object: { "reply": "your message to buyer", "newOffer": number (your proposed price, or null if accepted) }
+
+Buyer message: "${buyerMessage}"`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt
+      });
+      let text = response.text || "{}";
+      text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      res.json(JSON.parse(text));
+    } catch (e: any) {
+      console.error("AI Negotiation Error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   // Serve uploads folder statically in both dev and prod
   const uploadsDir = path.join(process.cwd(), "public", "uploads");

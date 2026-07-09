@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { supabase, decryptObject } from "../lib/supabase.js";
 import { getGeminiClient } from "../lib/gemini.js";
+import { requireAuth } from "../middleware/auth.js";
 import { OrbiSecurityPolicy } from "../../src/engine/OrbiSecurityPolicy.js";
 
 const router = Router();
@@ -356,26 +357,120 @@ ${productsCtx}`;
   }
 });
 
+// Phase 1: AI-Powered Listing Automation
+router.post("/auto-list-product", requireAuth, async (req, res) => {
+  try {
+    const { image } = req.body;
+    if (!image) {
+      return res.status(400).json({ success: false, message: "Base64 image is required" });
+    }
+
+    const ai = getGeminiClient();
+    let base64Data = image;
+    let mimeType = "image/png";
+
+    if (base64Data.includes(";base64,")) {
+      const parts = base64Data.split(";base64,");
+      mimeType = parts[0].replace("data:", "");
+      base64Data = parts[1];
+    }
+
+    const systemInstruction = `You are an expert eCommerce AI listing assistant for Orbi Shop Tanzania.
+Analyze the provided product image and generate a highly optimized product listing in both Swahili and English.
+You MUST return ONLY a valid, parseable JSON object matching this schema exactly, without any markdown formatting, backticks, or extra text.
+
+{
+  "title_en": "Optimized Product Title in English",
+  "title_sw": "Jina Zuri la Bidhaa kwa Kiswahili",
+  "niche": "One of: Electronics & Tech, Fashion & Apparel, Home & Furniture, Health & Beauty, Auto & Motors, Supermarket & Food",
+  "category": "Suggested category (e.g. Smartphones, Men's Shoes, Living Room, etc.)",
+  "description_en": "A highly persuasive and professional product description in English.",
+  "description_sw": "Maelezo mazuri na ya kushawishi ya bidhaa kwa Kiswahili.",
+  "features": [
+    { "name": "Feature Name (e.g. Brand/Weight/Material)", "description": "Value or detail" }
+  ],
+  "seo_tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          inlineData: {
+            mimeType,
+            data: base64Data
+          }
+        },
+        { text: "Analyze this image and generate the optimized product listing." }
+      ],
+      config: {
+        systemInstruction,
+        temperature: 0.2,
+        responseMimeType: "application/json"
+      }
+    });
+
+    let text = response.text || "";
+    text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+
+    let parsedData;
+    try {
+      parsedData = JSON.parse(text);
+    } catch (parseErr) {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsedData = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("Failed to parse Gemini response as JSON");
+      }
+    }
+
+    res.json({ success: true, data: parsedData });
+  } catch (error: any) {
+    console.error("[AI Auto-Listing] Failed:", error.message || error);
+    res.status(500).json({ success: false, message: error.message || "Failed to generate listing" });
+  }
+});
+
 // Generate product description using AI
 router.post("/generate-description", async (req, res) => {
   try {
     const { name, niche, category, features } = req.body;
     const ai = getGeminiClient();
 
-    const prompt = `Act as an expert eCommerce copywriter. Write a compelling, detailed product description for an item sold in Tanzania (Orbi Shop).
+    const prompt = `Act as an expert eCommerce copywriter. You are tasked with generating a product description AND a list of key technical or comparative features for an item sold in Tanzania (Orbi Shop).
 Product Name: ${name}
 Niche: ${niche}
 Category: ${category}
-Features: ${features ? JSON.stringify(features) : "None provided"}
+Existing Features: ${features && features.length > 0 ? JSON.stringify(features) : "None provided"}
 
-Write the description in a professional tone, blending English and Swahili gracefully if possible (or just mostly English with Swahili phrases). Focus on benefits to the user, the quality, and technical specifics if applicable. Keep it concise but persuasive (2-3 paragraphs). Do not include price.`;
+Requirements:
+1. "description": Write a compelling, detailed product description in a professional tone, blending English and Swahili gracefully if possible (or just mostly English with Swahili phrases). Focus on benefits to the user, quality, and technical specifics. Keep it concise but persuasive (2-3 paragraphs). Do not include price.
+2. "features": Generate 3 to 6 key comparative features (specs) that a buyer would look for in a comparison table for this type of product. Each feature should have a "name" (e.g., "Voltage", "Material", "Storage Capacity") and a "description" (e.g., "220V AC", "Premium Leather", "256GB SSD"). If Existing Features were provided, you can expand or refine them.
+
+Respond ONLY with a valid JSON object matching this schema:
+{
+  "description": "The product description string...",
+  "features": [
+    { "name": "Feature Name", "description": "Feature Value" }
+  ]
+}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
     });
 
-    res.json({ description: response.text });
+    try {
+      const data = JSON.parse(response.text);
+      res.json(data);
+    } catch (parseError) {
+      // Fallback if model didn't return proper JSON despite config
+      res.json({ description: response.text });
+    }
   } catch (err: any) {
     console.error("AI Gen Error:", err.message);
     res.status(500).json({ error: "Failed to generate description" });

@@ -47,8 +47,8 @@ import {
 import {
   Plus,
   Trash,
-  Edit,
   Check,
+  Percent,
   X,
   ChevronDown,
   Image as ImageIcon,
@@ -241,6 +241,10 @@ import {
   WashingMachine,
   Waves,
   Webcam,
+  Unlock,
+  Edit,
+  UserCheck,
+  ArrowLeft,
   Wheat,
 } from "lucide-react";
 import {
@@ -2389,6 +2393,11 @@ export function ProductsAdmin({
   const [stock, setStock] = useState("");
   const [tags, setTags] = useState("");
   const [desc, setDesc] = useState("");
+  
+  // Wakala (Broker) Commerce Mode
+  const [brokerId, setBrokerId] = useState("");
+  const [brokerCommissionPercent, setBrokerCommissionPercent] = useState("");
+  
   const [taxCode, setTaxCode] = useState(1);
   const [images, setImages] = useState<string[]>([]);
   const [visible, setVisible] = useState(true);
@@ -2845,6 +2854,8 @@ export function ProductsAdmin({
       setBlockedDeliveryZoneIds(prod.blockedDeliveryZoneIds || []);
       setFeatures(prod.features || []);
       setTaxCode(prod.taxCode || 1);
+      setBrokerId(prod.brokerId || "");
+      setBrokerCommissionPercent(prod.brokerCommissionPercent ? prod.brokerCommissionPercent.toString() : "");
       setArrangeTier(prod.arrangeTier || "all");
       setVibe(prod.vibe || "all");
       setPresentationStyle(prod.presentationStyle || "all");
@@ -2871,6 +2882,8 @@ export function ProductsAdmin({
       setVisible(true);
       setSku("");
       setWarranty("");
+      setBrokerId("");
+      setBrokerCommissionPercent("");
       setDeliveryClass("standard");
       setWeightKg("1");
       setLengthCm("");
@@ -2920,6 +2933,9 @@ export function ProductsAdmin({
       });
       if (data.description) {
         setDesc(data.description);
+        if (data.features && Array.isArray(data.features)) {
+          setFeatures(data.features);
+        }
         showAlert(
           lang === "sw"
             ? "Mswada wa maelezo maalum ya bidhaa umetengenezwa kikamilifu na Orbi AI!"
@@ -3301,6 +3317,56 @@ export function ProductsAdmin({
     handleImageFiles(Array.from(e.target.files));
     e.target.value = "";
   };
+  
+  const [isAutoListing, setIsAutoListing] = useState(false);
+  const handleAutoListFromImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    e.target.value = "";
+    
+    // Auto-upload as first image
+    handleImageFiles([file]);
+
+    setIsAutoListing(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64Data = reader.result as string;
+        try {
+          const res = await apiFetch("/api/v1/ai/auto-list-product", {
+            method: "POST",
+            body: JSON.stringify({ image: base64Data }),
+          });
+          if (res.success && res.data) {
+            const d = res.data;
+            if (d.title_sw) setName(d.title_sw);
+            else if (d.title_en) setName(d.title_en);
+            
+            if (d.niche) setNiche(d.niche);
+            if (d.category) setCategory(d.category);
+            if (d.description_sw) setDesc(d.description_sw);
+            else if (d.description_en) setDesc(d.description_en);
+            
+            if (d.features && Array.isArray(d.features)) {
+               setFeatures(d.features.map((f: any) => ({ id: Math.random().toString(), ...f })));
+            }
+            if (d.seo_tags && Array.isArray(d.seo_tags)) {
+               setTags(d.seo_tags.join(", "));
+            }
+            showAlert("Sifa za bidhaa zimejazwa kikamilifu na Orbi AI!", "success");
+          }
+        } catch (err: any) {
+           console.error("Auto list failed", err);
+           showAlert("Orbi AI imeshindwa kusoma picha. Jaza kwa mkono.", "error");
+        } finally {
+          setIsAutoListing(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      setIsAutoListing(false);
+    }
+  };
 
   const saveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3360,6 +3426,8 @@ export function ProductsAdmin({
       deliveryPolicySource: "manual",
       deliveryHandlingNotes,
       blockedDeliveryZoneIds,
+      brokerId: brokerId ? brokerId.trim() : undefined,
+      brokerCommissionPercent: brokerCommissionPercent ? parseFloat(brokerCommissionPercent) : undefined,
       sellerId: editId
         ? products.find((p) => p.id === editId)?.sellerId
         : currentSeller
@@ -4128,6 +4196,31 @@ export function ProductsAdmin({
               </button>
             </div>
             <form onSubmit={saveProduct} className="p-6 space-y-4">
+              {!editId && (
+                <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex flex-col items-center justify-center text-center gap-2 mb-2 relative overflow-hidden">
+                  <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: "radial-gradient(circle at center, #6366f1 1px, transparent 1px)", backgroundSize: "12px 12px" }}></div>
+                  <Sparkles size={24} className="text-indigo-600 mb-1 relative z-10" />
+                  <h4 className="text-sm font-black text-indigo-900 relative z-10">Orbi AI Auto-Listing</h4>
+                  <p className="text-xs text-indigo-700/80 mb-2 relative z-10 max-w-sm">
+                    {lang === "sw" ? "Pakia picha na Orbi AI itajaza jina, kategoria, na maelezo kiotomatiki." : "Upload a photo and Orbi AI will auto-fill the title, category, and description."}
+                  </p>
+                  <label className="relative z-10 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-xl cursor-pointer shadow-md transition-transform active:scale-95">
+                    {isAutoListing ? (
+                      <span className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></div>
+                        {lang === "sw" ? "Inasoma Picha..." : "Scanning..."}
+                      </span>
+                    ) : (
+                      <>
+                        <ImageIcon size={16} />
+                        {lang === "sw" ? "Pakia Picha & Jaza" : "Upload Photo & Auto-Fill"}
+                        <input type="file" accept="image/*" className="hidden" onChange={handleAutoListFromImage} disabled={isAutoListing} />
+                      </>
+                    )}
+                  </label>
+                </div>
+              )}
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-black uppercase text-slate-400 tracking-wider mb-1.5 animate-pulse">
@@ -4944,7 +5037,29 @@ export function ProductsAdmin({
                       : "Optional. Add warranty info to display a badge to customers."}
                   </p>
                 </div>
+
+                <div className="space-y-1.5 pt-3">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <Percent size={16} className="text-amber-500" />
+                    {lang === "sw" ? "Asilimia ya Dalali/Wakala (%)" : "Broker Commission (%)"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={brokerCommissionPercent}
+                    onChange={(e) => setBrokerCommissionPercent(e.target.value)}
+                    placeholder={lang === "sw" ? "Mfano: 3" : "e.g. 3"}
+                    className="w-full bg-slate-50 border border-slate-200/80 hover:border-slate-300 px-4 py-2.5 rounded-xl text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100 transition"
+                  />
+                  <p className="text-xs text-slate-500">
+                    {lang === "sw"
+                      ? "Hiari: Asilimia itakayokatwa kwenye mauzo na kulipwa kwa Wakala (Broker)."
+                      : "Optional: Percentage deducted from sales and paid to the Broker."}
+                  </p>
+                </div>
               </div>
+              
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-sm font-semibold text-slate-800">
@@ -15999,6 +16114,483 @@ export function TalkLogsAdmin({ lang }: { lang: string }) {
                 </div>
               )}
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function WakalasAdmin({
+  products = [],
+  orders = [],
+  lang = "en",
+}: {
+  products?: Product[];
+  orders?: Order[];
+  lang?: string;
+}) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedWakalaId, setSelectedWakalaId] = useState<string | null>(null);
+  
+  const { showAlert, showConfirm, showPrompt } = useDialog();
+
+  const [frozenWakalas, setFrozenWakalas] = useState<Record<string, boolean>>({});
+  const [showQuickContact, setShowQuickContact] = useState(false);
+
+  const wakalaStats = useMemo(() => {
+    const stats: Record<string, { id: string; productCount: number; orderCount: number; totalCommission: number; products: Product[]; orders: Order[] }> = {};
+
+    products.forEach((p) => {
+      if (p.brokerId) {
+        if (!stats[p.brokerId]) {
+          stats[p.brokerId] = { id: p.brokerId, productCount: 0, orderCount: 0, totalCommission: 0, products: [], orders: [] };
+        }
+        stats[p.brokerId].productCount++;
+        stats[p.brokerId].products.push(p);
+      }
+    });
+
+    orders.forEach((o) => {
+      if (o.brokerId) {
+        if (!stats[o.brokerId]) {
+          stats[o.brokerId] = { id: o.brokerId, productCount: 0, orderCount: 0, totalCommission: 0, products: [], orders: [] };
+        }
+        stats[o.brokerId].orderCount++;
+        stats[o.brokerId].orders.push(o);
+        if (o.brokerCommissionAmount) {
+          stats[o.brokerId].totalCommission += Number(o.brokerCommissionAmount);
+        }
+      }
+    });
+
+    return Object.values(stats);
+  }, [products, orders]);
+
+  const filtered = wakalaStats.filter((w) => w.id.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  const handleMessage = (wakalaId: string) => {
+    showPrompt(
+      lang === "sw" ? "Tuma Ujumbe kwa Wakala" : "Send Message to Wakala",
+      lang === "sw" ? "Andika ujumbe wako (Utatumwa kupitia System, SMS, na Email):" : "Type your message (Will be sent via System, SMS, and Email):",
+      (msg) => {
+        if (msg) {
+          showAlert(
+            lang === "sw" ? "Ujumbe Umetumwa" : "Message Sent",
+            lang === "sw" ? `Ujumbe umetumwa kikamilifu kwa wakala ${wakalaId}.` : `Message successfully sent to wakala ${wakalaId}.`
+          );
+        }
+      }
+    );
+  };
+
+  const handleQuickContact = (action: string, wakalaId: string) => {
+    setShowQuickContact(false);
+    let title = "";
+    let promptText = "";
+    
+    if (action === "sms") {
+      title = lang === "sw" ? "Tuma SMS" : "Send SMS";
+      promptText = lang === "sw" ? "Andika ujumbe wa SMS:" : "Type SMS message:";
+    } else if (action === "email") {
+      title = lang === "sw" ? "Tuma Barua Pepe" : "Send Email";
+      promptText = lang === "sw" ? "Andika ujumbe wa Barua Pepe:" : "Type Email message:";
+    } else {
+      title = lang === "sw" ? "Ujumbe wa Mfumo" : "In-System Message";
+      promptText = lang === "sw" ? "Andika ujumbe (Utatumwa kwenye Orbi Talk):" : "Type message (Will be sent via Orbi Talk):";
+    }
+
+    showPrompt(title, promptText, (msg) => {
+      if (msg) {
+        showAlert(
+          lang === "sw" ? "Ujumbe Umetumwa" : "Message Sent",
+          lang === "sw" ? `Ujumbe umetumwa kikamilifu kwa wakala ${wakalaId}.` : `Message successfully sent to wakala ${wakalaId}.`
+        );
+      }
+    });
+  };
+
+  const handleToggleFreeze = (wakalaId: string) => {
+    const isFrozen = frozenWakalas[wakalaId];
+    showConfirm(
+      isFrozen ? (lang === "sw" ? "Fungua Akaunti" : "Unfreeze Account") : (lang === "sw" ? "Funga Akaunti" : "Freeze Account"),
+      isFrozen 
+        ? (lang === "sw" ? "Je, una uhakika unataka kuruhusu wakala huyu kufanya kazi tena?" : "Are you sure you want to unfreeze this wakala?")
+        : (lang === "sw" ? "Je, una uhakika unataka kufunga akaunti ya wakala huyu? Hatoweza kupokea kamisheni." : "Are you sure you want to freeze this wakala? They will not receive commissions."),
+      () => {
+        setFrozenWakalas(prev => ({ ...prev, [wakalaId]: !isFrozen }));
+        showAlert(
+          lang === "sw" ? "Imefanikiwa" : "Success",
+          isFrozen ? (lang === "sw" ? "Wakala amefunguliwa." : "Wakala unfrozen.") : (lang === "sw" ? "Wakala amefungiwa." : "Wakala frozen.")
+        );
+      }
+    );
+  };
+
+  const handleDelete = (wakalaId: string) => {
+    showConfirm(
+      lang === "sw" ? "Futa Wakala" : "Delete Wakala",
+      lang === "sw" ? "Tahadhari: Kufuta wakala kutaondoa taarifa zake. Hii haiwezi kurudishwa." : "Warning: Deleting a wakala will remove their profile. This cannot be undone.",
+      () => {
+        showAlert(lang === "sw" ? "Imefanikiwa" : "Success", lang === "sw" ? "Wakala amefutwa (Simulation)." : "Wakala deleted (Simulation).");
+        setSelectedWakalaId(null);
+      }
+    );
+  };
+
+  const handleEdit = (wakalaId: string) => {
+    showPrompt(
+      lang === "sw" ? "Hariri Wakala" : "Edit Wakala",
+      lang === "sw" ? "Badilisha ID/Jina la Wakala:" : "Change Wakala ID/Name:",
+      (newVal) => {
+        if (newVal) {
+          showAlert(lang === "sw" ? "Imesasishwa" : "Updated", lang === "sw" ? "Taarifa zimesasishwa (Simulation)." : "Information updated (Simulation).");
+        }
+      }
+    );
+  };
+
+  if (selectedWakalaId) {
+    const wakala = wakalaStats.find(w => w.id === selectedWakalaId);
+    if (!wakala) {
+      setSelectedWakalaId(null);
+      return null;
+    }
+
+    const isFrozen = frozenWakalas[wakala.id];
+
+    // Generate chronological activity log
+    const activities: { id: string; type: string; title: string; desc?: string; date: string; icon: any; color: string }[] = [];
+    
+    // 1. Registration
+    activities.push({
+      id: 'reg',
+      type: 'registration',
+      title: lang === 'sw' ? 'Usajili wa Wakala' : 'Wakala Registration',
+      date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      icon: <UserCheck size={14} />,
+      color: 'bg-blue-100 text-blue-600'
+    });
+    
+    // 2. Orders (Transactions)
+    wakala.orders.forEach(o => {
+      activities.push({
+        id: `order-${o.id}`,
+        type: 'transaction',
+        title: lang === 'sw' ? `Oda mpya: ${o.orderNumber || o.id.slice(0,8)}` : `New Order: ${o.orderNumber || o.id.slice(0,8)}`,
+        desc: `+ ${formatCurrency(o.brokerCommissionAmount || 0)}`,
+        date: o.createdAt,
+        icon: <DollarSign size={14} />,
+        color: 'bg-emerald-100 text-emerald-600'
+      });
+    });
+    
+    // 3. Status changes (frozen)
+    if (isFrozen) {
+      activities.push({
+        id: 'frozen',
+        type: 'status',
+        title: lang === 'sw' ? 'Akaunti imefungiwa' : 'Account Frozen',
+        date: new Date().toISOString(),
+        icon: <Lock size={14} />,
+        color: 'bg-red-100 text-red-600'
+      });
+    }
+
+    // Sort descending by date
+    activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return (
+      <div className="bg-slate-50 min-h-full p-4 sm:p-6 flex flex-col gap-6 relative">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-200/60 shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
+          <div className="flex items-center gap-4 relative z-10">
+            <button
+              onClick={() => setSelectedWakalaId(null)}
+              className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition-colors"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                {wakala.id}
+                {isFrozen && <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full uppercase tracking-wider font-bold">FROZEN</span>}
+              </h2>
+              <p className="text-sm font-semibold text-slate-500">
+                {lang === "sw" ? "Taarifa za Wakala" : "Wakala Details"}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap gap-2 relative z-10 w-full sm:w-auto">
+            <button onClick={() => handleEdit(wakala.id)} className="flex-1 sm:flex-none px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-black hover:bg-slate-200 transition-all flex items-center justify-center gap-1.5">
+              <Edit size={14} /> {lang === "sw" ? "Hariri" : "Edit"}
+            </button>
+            <button onClick={() => handleToggleFreeze(wakala.id)} className={`flex-1 sm:flex-none px-4 py-2 border rounded-xl text-xs font-black transition-all shadow-sm flex items-center justify-center gap-1.5 ${isFrozen ? 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100' : 'bg-amber-50 border-amber-100 text-amber-700 hover:bg-amber-100'}`}>
+              {isFrozen ? <Unlock size={14} /> : <Lock size={14} />} 
+              {isFrozen ? (lang === "sw" ? "Fungua" : "Unfreeze") : (lang === "sw" ? "Funga" : "Freeze")}
+            </button>
+            <button onClick={() => handleDelete(wakala.id)} className="flex-1 sm:flex-none px-4 py-2 bg-red-50 border border-red-100 text-red-600 rounded-xl text-xs font-black hover:bg-red-100 transition-all shadow-sm flex items-center justify-center gap-1.5">
+              <Trash size={14} /> {lang === "sw" ? "Futa" : "Delete"}
+            </button>
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/60 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-500">
+              <Package size={24} />
+            </div>
+            <div>
+              <div className="text-2xl font-black text-slate-800">{wakala.productCount}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                {lang === "sw" ? "Jumla ya Bidhaa" : "Total Products"}
+              </div>
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/60 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-500">
+              <ShoppingCart size={24} />
+            </div>
+            <div>
+              <div className="text-2xl font-black text-slate-800">{wakala.orderCount}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                {lang === "sw" ? "Jumla ya Oda" : "Total Orders"}
+              </div>
+            </div>
+          </div>
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/60 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500">
+              <DollarSign size={24} />
+            </div>
+            <div>
+              <div className="text-2xl font-black text-slate-800">{formatCurrency(wakala.totalCommission)}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                {lang === "sw" ? "Jumla ya Kamisheni" : "Total Commission"}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Lists */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Products */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/60 shadow-sm flex flex-col max-h-[500px]">
+             <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-5">{lang === "sw" ? "Bidhaa za Wakala" : "Wakala's Products"}</h3>
+             <div className="flex-1 overflow-auto pr-2 space-y-3">
+                {wakala.products.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400 text-sm">{lang === "sw" ? "Hakuna bidhaa." : "No products."}</div>
+                ) : (
+                  wakala.products.map(p => (
+                    <div key={p.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                       <div className="w-10 h-10 rounded-lg overflow-hidden bg-white shrink-0">
+                          <img src={p.images?.[0] || 'https://placehold.co/100x100?text=No+Image'} alt={p.name} className="w-full h-full object-cover" />
+                       </div>
+                       <div className="flex-1 min-w-0">
+                          <div className="font-bold text-sm text-slate-800 truncate">{p.name}</div>
+                          <div className="text-xs text-slate-500">
+                            {lang === "sw" ? "Kamisheni:" : "Commission:"} {p.brokerCommissionPercent}%
+                          </div>
+                       </div>
+                       <div className="font-black text-sm text-slate-900">
+                         <PriceDisplay amount={p.price} compact />
+                       </div>
+                    </div>
+                  ))
+                )}
+             </div>
+          </div>
+
+          {/* Orders */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/60 shadow-sm flex flex-col max-h-[500px]">
+             <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-5">{lang === "sw" ? "Oda Zilizofanikiwa" : "Successful Orders"}</h3>
+             <div className="flex-1 overflow-auto pr-2 space-y-3">
+                {wakala.orders.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400 text-sm">{lang === "sw" ? "Hakuna oda." : "No orders."}</div>
+                ) : (
+                  wakala.orders.map(o => (
+                    <div key={o.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                       <div>
+                          <div className="font-bold text-sm text-slate-800">{o.orderNumber || o.id.slice(0,8)}</div>
+                          <div className="text-xs text-slate-500">
+                            {new Date(o.createdAt).toLocaleDateString()}
+                          </div>
+                       </div>
+                       <div className="text-right">
+                         <div className="text-xs font-bold text-emerald-600">
+                           + {formatCurrency(o.brokerCommissionAmount || 0)}
+                         </div>
+                         <div className="text-[10px] text-slate-400 uppercase font-bold">{lang === "sw" ? "Kamisheni" : "Commission"}</div>
+                       </div>
+                    </div>
+                  ))
+                )}
+             </div>
+          </div>
+        </div>
+
+        {/* Activity Log */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-200/60 shadow-sm flex flex-col mt-2">
+           <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-5">{lang === "sw" ? "Kumbukumbu za Matukio" : "Activity Log"}</h3>
+           <div className="flex-1 overflow-auto pr-2 max-h-[400px]">
+              {activities.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-sm">{lang === "sw" ? "Hakuna matukio." : "No activities."}</div>
+              ) : (
+                <div className="relative border-l-2 border-slate-100 ml-3 py-2 space-y-8">
+                  {activities.map(act => (
+                    <div key={act.id} className="relative pl-6">
+                      <div className={`absolute -left-[11px] top-0.5 w-5 h-5 rounded-full ${act.color} flex items-center justify-center ring-4 ring-white`}>
+                        {act.icon}
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-slate-800">{act.title}</div>
+                        {act.desc && <div className="text-xs font-bold text-emerald-600 mt-0.5">{act.desc}</div>}
+                        <div className="text-[10px] font-bold text-slate-400 uppercase mt-1">
+                          {new Date(act.date).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+           </div>
+        </div>
+
+        {/* Quick Contact FAB */}
+        <div className="absolute bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+          {showQuickContact && (
+            <div className="flex flex-col gap-2 mb-2">
+              <button
+                onClick={() => handleQuickContact("sms", wakala.id)}
+                className="flex items-center gap-3 bg-white px-4 py-3 rounded-full shadow-lg border border-slate-200 hover:bg-slate-50 transition-colors text-slate-700 font-bold text-sm group"
+              >
+                <span className="group-hover:-translate-x-1 transition-transform">{lang === "sw" ? "Tuma SMS" : "Send SMS"}</span>
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                  <Smartphone size={16} />
+                </div>
+              </button>
+              
+              <button
+                onClick={() => handleQuickContact("email", wakala.id)}
+                className="flex items-center gap-3 bg-white px-4 py-3 rounded-full shadow-lg border border-slate-200 hover:bg-slate-50 transition-colors text-slate-700 font-bold text-sm group"
+              >
+                <span className="group-hover:-translate-x-1 transition-transform">{lang === "sw" ? "Barua Pepe" : "Send Email"}</span>
+                <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
+                  <Mail size={16} />
+                </div>
+              </button>
+              
+              <button
+                onClick={() => handleQuickContact("system", wakala.id)}
+                className="flex items-center gap-3 bg-white px-4 py-3 rounded-full shadow-lg border border-slate-200 hover:bg-slate-50 transition-colors text-slate-700 font-bold text-sm group"
+              >
+                <span className="group-hover:-translate-x-1 transition-transform">{lang === "sw" ? "Ujumbe wa Mfumo" : "In-System Message"}</span>
+                <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                  <MessageSquare size={16} />
+                </div>
+              </button>
+            </div>
+          )}
+          
+          <button
+            onClick={() => setShowQuickContact(!showQuickContact)}
+            className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-all duration-300 ${showQuickContact ? 'bg-slate-800 rotate-45' : 'bg-emerald-500 hover:bg-emerald-600 hover:scale-105'}`}
+          >
+            {showQuickContact ? <X size={24} /> : <MessageSquare size={24} />}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col h-full max-h-[800px]">
+      <div className="p-4 sm:p-5 lg:p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <Briefcase className="text-emerald-500" />
+            {lang === "sw" ? "Usimamizi wa Mawakala" : "Wakalas Management"}
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">
+            {lang === "sw" ? "Kumbukumbu za utendaji wa mawakala." : "Performance records for wakalas/brokers."}
+          </p>
+        </div>
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input
+            type="text"
+            placeholder={lang === "sw" ? "Tafuta kwa kitambulisho (ID)..." : "Search by ID..."}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border-slate-200 border rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+          />
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-4 sm:p-5 lg:p-6">
+        {filtered.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Briefcase className="text-slate-400" size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800">
+              {lang === "sw" ? "Hakuna mawakala waliopatikana" : "No wakalas found"}
+            </h3>
+            <p className="text-slate-500 mt-1">
+              {lang === "sw" ? "Ongeza mawakala kwenye bidhaa zao." : "Assign wakalas to products."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((w) => (
+              <div 
+                key={w.id} 
+                className={`bg-white border ${frozenWakalas[w.id] ? 'border-red-200 bg-red-50/30' : 'border-slate-200'} rounded-xl p-4 hover:shadow-md transition cursor-pointer group relative`}
+                onClick={() => setSelectedWakalaId(w.id)}
+              >
+                {frozenWakalas[w.id] && (
+                  <div className="absolute top-3 right-3 text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    FROZEN
+                  </div>
+                )}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${frozenWakalas[w.id] ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                    {frozenWakalas[w.id] ? <Lock size={20} /> : <UserCheck size={20} />}
+                  </div>
+                  <div className="flex-1 min-w-0 pr-12">
+                    <h3 className="font-bold text-slate-800 text-sm truncate" title={w.id}>
+                      {w.id}
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Wakala ID
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <div className="bg-slate-50 p-2 rounded-lg text-center border border-slate-100 group-hover:bg-white transition-colors">
+                    <div className="text-lg font-black text-slate-700">{w.productCount}</div>
+                    <div className="text-[10px] text-slate-500 uppercase font-semibold">
+                      {lang === "sw" ? "Bidhaa" : "Products"}
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 p-2 rounded-lg text-center border border-slate-100 group-hover:bg-white transition-colors">
+                    <div className="text-lg font-black text-slate-700">{w.orderCount}</div>
+                    <div className="text-[10px] text-slate-500 uppercase font-semibold">
+                      {lang === "sw" ? "Oda (Orders)" : "Orders"}
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-emerald-50 text-emerald-800 p-3 rounded-lg border border-emerald-100 flex justify-between items-center group-hover:bg-emerald-100 transition-colors">
+                  <span className="text-xs font-bold uppercase">
+                    {lang === "sw" ? "Kamisheni" : "Commission"}
+                  </span>
+                  <span className="font-black">
+                    {formatCurrency(w.totalCommission)}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

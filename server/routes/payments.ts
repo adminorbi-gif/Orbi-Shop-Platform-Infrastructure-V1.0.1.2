@@ -118,6 +118,39 @@ export function writePaymentLedgerLog(log: {
       logs = logs.slice(0, 200);
     }
     fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf8");
+
+    // Enterprise Phase 1: Also persist to Supabase transaction_ledger_history if orderId is a UUID
+    if (log.orderId && log.orderId.includes('-') && log.orderId.length > 30) {
+      // Async insert, don't block
+      const methodMapping: Record<string, string> = {
+        'Tigo Pesa': 'tigo-pesa',
+        'M-Pesa': 'm-pesa',
+        'Airtel Money': 'airtel-money',
+        'HaloPesa': 'halopesa'
+      };
+      const normalizedMethod = methodMapping[log.paymentMethod] || 'm-pesa';
+      
+      const tlStatusMapping: Record<string, string> = {
+        'success': 'completed',
+        'failed': 'failed',
+        'pending': 'pending'
+      };
+      
+      import('../lib/supabase.js').then(({ supabase }) => {
+        supabase.from('transaction_ledger_history').insert({
+          order_id: log.orderId,
+          transaction_reference: log.gatewayReferenceId || `REF-${newLog.id}`,
+          amount: log.amount,
+          payment_method: normalizedMethod,
+          transaction_type: log.status === 'success' ? 'payment_escrowed' : 'payment_escrowed',
+          status: tlStatusMapping[log.status] || 'pending',
+          idempotency_key: `v1-${log.orderId}-${log.gatewayReferenceId}-${log.status}`,
+        }).catch((err: any) => {
+          console.warn("[Enterprise Ledger] Failed to persist to Supabase:", err.message);
+        });
+      });
+    }
+
   } catch (err: any) {
     console.error("Failed to write payment ledger log:", err.message);
   }

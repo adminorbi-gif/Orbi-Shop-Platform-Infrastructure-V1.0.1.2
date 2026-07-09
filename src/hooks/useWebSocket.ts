@@ -8,7 +8,11 @@ const SOCKET_URL = window.location.origin;
 
 export type ConnectionQuality = "poor" | "good" | "offline";
 
-export function useWebSocket(userId?: string) {
+export function useWebSocket(
+  userId?: string,
+  activeConversationId?: string | null,
+  onNewMessage?: (msg: ChatMessage) => void
+) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionQuality, setConnectionQuality] = useState<ConnectionQuality>("offline");
@@ -18,6 +22,15 @@ export function useWebSocket(userId?: string) {
   const activeRoomsRef = useRef<Set<string>>(new Set());
   const pendingQueueRef = useRef<any[]>([]);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // We use refs for dependencies that shouldn't trigger re-connects
+  const onNewMessageRef = useRef(onNewMessage);
+  const activeConversationIdRef = useRef(activeConversationId);
+  
+  useEffect(() => {
+    onNewMessageRef.current = onNewMessage;
+    activeConversationIdRef.current = activeConversationId;
+  }, [onNewMessage, activeConversationId]);
 
   // Monitor latency to determine connection quality
   const startLatencyMonitor = useCallback((sock: Socket) => {
@@ -107,11 +120,16 @@ export function useWebSocket(userId?: string) {
       newSocket.on("connect_error", handleConnectError);
 
       newSocket.on("newMessage", (message: ChatMessage) => {
-        setMessages((prev) => {
-          // Avoid duplicates
-          if (prev.some((m) => m.id === message.id)) return prev;
-          return [...prev, message];
-        });
+        if (activeConversationIdRef.current === message.conversationId) {
+          setMessages((prev) => {
+            // Avoid duplicates
+            if (prev.some((m) => m.id === message.id)) return prev;
+            return [...prev, message];
+          });
+        }
+        if (onNewMessageRef.current) {
+          onNewMessageRef.current(message);
+        }
       });
 
       newSocket.on("messagesRead", ({ conversationId, readByUserId }: { conversationId: string; readByUserId: string }) => {

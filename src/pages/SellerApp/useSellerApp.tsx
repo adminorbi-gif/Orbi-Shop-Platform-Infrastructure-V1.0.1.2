@@ -217,6 +217,7 @@ export function useSellerApp({ seller, products, orders, onLogout, lang, setLang
   const [prodCategory, setProdCategory] = useState("");
   const [prodFamily, setProdFamily] = useState("");
   const [prodPrice, setProdPrice] = useState("");
+  const [prodWalkAwayPrice, setProdWalkAwayPrice] = useState("");
   const [prodOldPrice, setProdOldPrice] = useState("");
   const [prodStock, setProdStock] = useState("");
   const [prodPricingMode, setProdPricingMode] = useState<
@@ -326,7 +327,9 @@ export function useSellerApp({ seller, products, orders, onLogout, lang, setLang
       ...policy,
       summary: summarizeDeliveryPolicy(policy, lang === "sw" ? "sw" : "en"),
     };
-  }, [prodName, prodNiche, prodCategory, prodFamily, prodDescription, prodPrice, prodStock, lang]);
+  }, [prodName, prodNiche, prodCategory, prodFamily, prodDescription, prodPrice,
+    prodWalkAwayPrice,
+    setProdWalkAwayPrice, prodStock, lang]);
   const [savingProduct, setSavingProduct] = useState(false);
   const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
 
@@ -633,6 +636,7 @@ export function useSellerApp({ seller, products, orders, onLogout, lang, setLang
       setProdFamily(product.family || "");
       setProdPrice(product.price ? product.price.toString() : "");
       setProdOldPrice(product.oldPrice ? product.oldPrice.toString() : "");
+      setProdWalkAwayPrice(product.walkAwayPrice ? product.walkAwayPrice.toString() : "");
       setProdStock(product.stock ? product.stock.toString() : "0");
       setProdDescription(product.description || "");
       setProdFeatures(product.features || []);
@@ -660,6 +664,7 @@ export function useSellerApp({ seller, products, orders, onLogout, lang, setLang
       setProdFamily("");
       setProdPrice("");
       setProdOldPrice("");
+      setProdWalkAwayPrice("");
       setProdStock("10");
       setProdDescription("");
       setProdFeatures([]);
@@ -785,6 +790,7 @@ export function useSellerApp({ seller, products, orders, onLogout, lang, setLang
       ...smartDeliveryPolicy,
       sellerId: seller.id,
       wholesaleTiers: finalWholesaleTiers,
+      walkAwayPrice: parseFloat(prodWalkAwayPrice) || undefined,
       tags: [],
     };
 
@@ -1157,6 +1163,8 @@ export function useSellerApp({ seller, products, orders, onLogout, lang, setLang
     prodFamily,
     setProdFamily,
     prodPrice,
+    prodWalkAwayPrice,
+    setProdWalkAwayPrice,
     setProdPrice,
     prodOldPrice,
     setProdOldPrice,

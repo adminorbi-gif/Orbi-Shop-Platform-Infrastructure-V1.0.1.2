@@ -1,7 +1,9 @@
 import { useClientApp } from "./useClientApp";
 import { ClientChatModal } from "../../components/chat/ClientChatModal";
 import { WhatAreYouLookingFor } from "./components/WhatAreYouLookingFor";
+import { ClientSmartBundles, generateSmartBundles, ClientSmartBundleCard, SmartBundle } from "./components/ClientSmartBundles";
 import { EcosystemResults } from "./components/EcosystemResults";
+import { BusinessBundleDetailPage } from "./components/BusinessBundleDetailPage";
 import { EcosystemViewer } from "./components/EcosystemViewer";
 import {
   DynamicPropertyFilter,
@@ -555,6 +557,7 @@ const slugify = (text: string) => {
 };
 
 export default function ClientApp() {
+  const [selectedBundle, setSelectedBundle] = useState<SmartBundle | null>(null);
   const {
     showAlert,
     showConfirm,
@@ -780,6 +783,21 @@ export default function ClientApp() {
     ecosystemViewerItem,
     setEcosystemViewerItem
   } = useClientApp();
+
+  const [isCartPulsing, setIsCartPulsing] = useState(false);
+  const prevCartCountRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const totalCount = cart ? cart.reduce((acc, item) => acc + item.quantity, 0) : 0;
+    if (prevCartCountRef.current !== null && totalCount > prevCartCountRef.current) {
+      setIsCartPulsing(true);
+      const timer = setTimeout(() => {
+        setIsCartPulsing(false);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+    prevCartCountRef.current = totalCount;
+  }, [cart]);
 
   useEffect(() => {
     const handleOpenChat = (e: Event) => {
@@ -1229,6 +1247,15 @@ export default function ClientApp() {
     setFamilySortOrder("default");
     setActiveDynamicFilters({});
   }, [selectedFamily]);
+
+  const familyBundles = useMemo(() => {
+    if (!selectedFamily) return [];
+    return generateSmartBundles(products, lang, undefined, selectedFamily);
+  }, [products, lang, selectedFamily]);
+
+  const allAvailableBundlesForDetail = useMemo(() => {
+    return generateSmartBundles(products, lang, selectedNiche !== "Zote" ? selectedNiche : undefined, selectedFamily || undefined);
+  }, [products, lang, selectedNiche, selectedFamily]);
 
   if (ecosystemViewerItem) {
     return (
@@ -1723,9 +1750,13 @@ export default function ClientApp() {
                 </div>
               )}
 
-              <button
+              <motion.button
                 onClick={() => setShowCart(true)}
-                className="relative p-2.5 bg-white hover:bg-orange-50 text-orange-600 rounded-full transition shadow-md hover:shadow-lg hover:-translate-y-0.5 ml-1 border border-transparent"
+                animate={isCartPulsing ? {
+                  scale: [1, 1.25, 0.95, 1.1, 1],
+                  transition: { duration: 0.6, ease: "easeInOut" }
+                } : {}}
+                className="relative p-2.5 bg-white hover:bg-orange-50 text-orange-600 rounded-full transition shadow-md hover:shadow-lg hover:-translate-y-0.5 ml-1 border border-transparent cursor-pointer flex items-center justify-center shrink-0"
               >
                 <ShoppingCart size={20} />
                 {cart.length > 0 && (
@@ -1733,7 +1764,7 @@ export default function ClientApp() {
                     {cart.reduce((a, c) => a + c.quantity, 0)}
                   </span>
                 )}
-              </button>
+              </motion.button>
             </div>
           </div>
 
@@ -2071,51 +2102,110 @@ export default function ClientApp() {
                     {filteredFamilyProducts.length > 0 ? (
                       <div className="orbi-product-list-grid py-1">
                         <AnimatePresence mode="popLayout">
-                          {filteredFamilyProducts.map((p) => {
-                            const pSeller = sellers.find(
-                              (s) => s.id === p.sellerId,
-                            );
-                            return (
-                              <motion.div
-                                key={p.id}
-                                layout
-                                initial={{
-                                  opacity: 0,
-                                  scale: 0.9,
-                                  y: 15,
-                                  rotate: -1,
-                                }}
-                                animate={{
-                                  opacity: 1,
-                                  scale: 1,
-                                  y: 0,
-                                  rotate: 0,
-                                }}
-                                exit={{ opacity: 0, scale: 0.9, rotate: 1 }}
-                                transition={{
-                                  layout: {
-                                    type: "spring",
-                                    stiffness: 250,
-                                    damping: 22,
-                                  },
-                                  default: { duration: 0.3, ease: "easeOut" },
-                                }}
-                              >
-                                <ProductCard
-                                  p={p}
-                                  seller={pSeller}
-                                  onAdd={(openCart) => addToCart(p, openCart)}
-                                  onSelect={() => handleProductSelect(p)}
-                                  onInteract={() => trackProductInteraction(p)}
-                                  onViewSeller={setViewSeller}
-                                  lang={lang}
-                                  isLiked={likedProductIds.includes(p.id)}
-                                  onLikeToggle={toggleLikeProduct}
-                                  averageNichePrice={productComparisonPrices[p.id]}
-                                />
-                              </motion.div>
-                            );
-                          })}
+                          {(() => {
+                            const elements: React.ReactNode[] = [];
+                            const bundlesToInject = [...familyBundles];
+
+                            filteredFamilyProducts.forEach((p, idx) => {
+                              const pSeller = sellers.find(
+                                (s) => s.id === p.sellerId,
+                              );
+                              elements.push(
+                                <motion.div
+                                  key={p.id}
+                                  layout
+                                  initial={{
+                                    opacity: 0,
+                                    scale: 0.9,
+                                    y: 15,
+                                    rotate: -1,
+                                  }}
+                                  animate={{
+                                    opacity: 1,
+                                    scale: 1,
+                                    y: 0,
+                                    rotate: 0,
+                                  }}
+                                  exit={{ opacity: 0, scale: 0.9, rotate: 1 }}
+                                  transition={{
+                                    layout: {
+                                      type: "spring",
+                                      stiffness: 250,
+                                      damping: 22,
+                                    },
+                                    default: { duration: 0.3, ease: "easeOut" },
+                                  }}
+                                >
+                                  <ProductCard
+                                    p={p}
+                                    seller={pSeller}
+                                    onAdd={(openCart) => addToCart(p, openCart)}
+                                    onSelect={() => handleProductSelect(p)}
+                                    onInteract={() => trackProductInteraction(p)}
+                                    onViewSeller={setViewSeller}
+                                    lang={lang}
+                                    isLiked={likedProductIds.includes(p.id)}
+                                    onLikeToggle={toggleLikeProduct}
+                                    averageNichePrice={productComparisonPrices[p.id]}
+                                  />
+                                </motion.div>
+                              );
+
+                              // Inject a bundle card every 4 products
+                              if ((idx + 1) % 4 === 0 && bundlesToInject.length > 0) {
+                                const bundle = bundlesToInject.shift();
+                                if (bundle) {
+                                  elements.push(
+                                    <motion.div
+                                      key={`family-bundle-${bundle.id}`}
+                                      layout
+                                      initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                                      exit={{ opacity: 0, scale: 0.9 }}
+                                      transition={{ duration: 0.2 }}
+                                    >
+                                      <ClientSmartBundleCard
+                                        bundle={bundle}
+                                        lang={lang}
+                                        products={products}
+                                        onSelectProduct={(prod) => handleProductSelect(prod)}
+                                        onAddToCart={addToCart}
+                                        onSelectBundle={setSelectedBundle}
+                                      />
+                                    </motion.div>
+                                  );
+                                }
+                              }
+                            });
+
+                            // Append leftover bundles if any are still in queue
+                            while (bundlesToInject.length > 0) {
+                              const bundle = bundlesToInject.shift();
+                              if (bundle) {
+                                elements.push(
+                                  <motion.div
+                                    key={`family-bundle-end-${bundle.id}`}
+                                    layout
+                                    initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.9 }}
+                                    transition={{ duration: 0.2 }}
+                                  >
+                                    <ClientSmartBundleCard
+                                      bundle={bundle}
+                                      lang={lang}
+                                      products={products}
+                                      onSelectProduct={(prod) => handleProductSelect(prod)}
+                                      onAddToCart={addToCart}
+                                      onSelectBundle={setSelectedBundle}
+                                    />
+                                  </motion.div>
+                                );
+                              }
+                            }
+
+                            return elements;
+                          })()}
                         </AnimatePresence>
                       </div>
                     ) : (
@@ -2168,7 +2258,7 @@ export default function ClientApp() {
                       </div>
                     )}
 
-                    {/* What are you looking for automated recommendation bar */}
+                     {/* What are you looking for automated recommendation bar */}
                     <div className="mt-12">
                       <WhatAreYouLookingFor
                         products={products}
@@ -2315,6 +2405,8 @@ export default function ClientApp() {
                         }, 250);
                       }
                     }}
+                    onAddToCart={addToCart}
+                    onSelectBundle={setSelectedBundle}
                     activeDynamicFilters={activeDynamicFilters}
                     setActiveDynamicFilters={setActiveDynamicFilters}
                     nicheColorMap={nicheColorMap}
@@ -4847,6 +4939,21 @@ export default function ClientApp() {
               onOpenAuth={(mode) => setShowAuth(mode)}
             />
           </Suspense>
+        )}
+        {selectedBundle && (
+          <div className="fixed inset-0 z-[140] bg-slate-50 overflow-y-auto animate-fadeIn">
+            <BusinessBundleDetailPage
+              bundle={selectedBundle}
+              lang={lang}
+              onClose={() => setSelectedBundle(null)}
+              allBundles={allAvailableBundlesForDetail}
+              onSelectBundle={setSelectedBundle}
+              onAddToCart={addToCart}
+              onSelectProduct={(p) => handleProductSelect(p)}
+              products={products}
+              sellers={sellers}
+            />
+          </div>
         )}
         {showTrackOrder && (
           <Suspense

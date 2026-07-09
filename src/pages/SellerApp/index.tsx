@@ -53,9 +53,11 @@ import {
   Share2,
   Clock,
   Activity,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from "lucide-react";
 import { ChatWidget } from "../../components/chat/ChatWidget";
+import { SellerSmartBundles } from "../../components/seller/SellerSmartBundles";
 const SellerMarketing = lazyWithRetry(() => import("../../components/seller/SellerMarketing").then(m => ({ default: m.SellerMarketing })));
 import {
   ResponsiveContainer,
@@ -194,6 +196,8 @@ export default function SellerApp({
     prodFamily,
     setProdFamily,
     prodPrice,
+    prodWalkAwayPrice,
+    setProdWalkAwayPrice,
     setProdPrice,
     prodOldPrice,
     setProdOldPrice,
@@ -255,6 +259,64 @@ export default function SellerApp({
     orderStatusFilter,
     setOrderStatusFilter
   } = useSellerApp({ seller, products, orders, onLogout, lang, setLang, onRefreshData, addToast });
+
+  const [isGeneratingAILogic, setIsGeneratingAILogic] = useState(false);
+
+  const handleAIFill = async () => {
+    if (realProductImages.length === 0) return;
+    setIsGeneratingAILogic(true);
+    try {
+      // We need to fetch the image as base64 to send to our new endpoint
+      const imgUrl = realProductImages[0];
+      let base64 = "";
+      if (imgUrl.startsWith("data:image")) {
+        base64 = imgUrl;
+      } else {
+        const response = await fetch(imgUrl);
+        const blob = await response.blob();
+        base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      const res = await fetch("/api/v1/ai/generate-listing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64 })
+      });
+      if (!res.ok) throw new Error("Failed to generate AI listing");
+      const data = await res.json();
+      
+      if (data.title) setProdName(data.title);
+      if (data.description) setProdDescription(data.description);
+      if (data.price && data.price > 0) setProdPrice(data.price.toString());
+      if (data.category) {
+        // Simple mapping attempt
+        const catMap: Record<string, {n: string, c: string}> = {
+          electronics: { n: "Electronics & Tech", c: "Phones & Tablets" },
+          fashion: { n: "Fashion & Apparel", c: "Men's Clothing" },
+          home: { n: "Home & Furniture", c: "Living Room" },
+          health: { n: "Health & Beauty", c: "Skincare" },
+          auto: { n: "Auto & Motors", c: "Car Accessories" },
+          supermarket: { n: "Supermarket & Food", c: "Pantry" }
+        };
+        const mapped = catMap[data.category.toLowerCase()];
+        if (mapped) {
+          setProdNiche(mapped.n);
+          setProdCategory(mapped.c);
+        }
+      }
+      addToast(lang === "sw" ? "Taarifa zimejazwa na AI" : "AI Auto-Fill successful", "success");
+    } catch (e) {
+      console.error(e);
+      addToast("AI generation failed", "error");
+    } finally {
+      setIsGeneratingAILogic(false);
+    }
+  };
 
   const downloadReceipt = async (payout: any) => {
     const { jsPDF } = await import("jspdf");
@@ -1927,6 +1989,8 @@ export default function SellerApp({
                     )}
                   </div>
                 </div>
+
+                <SellerSmartBundles sellerId={seller.id} products={sellerProducts} lang={lang} />
               </div>
             )}
 
@@ -3594,6 +3658,26 @@ export default function SellerApp({
                   </div>
 
                   <div className="space-y-1.5">
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest flex justify-between items-center">
+                      <span>{lang === "sw" ? "Bei ya Chini Kabisa (Walk-away Price)" : "Minimum Walk-away Price (TZS)"}</span>
+                      <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[8px] font-bold">AI NEGOTIATION</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={prodWalkAwayPrice}
+                      onChange={(e) => setProdWalkAwayPrice(e.target.value)}
+                      placeholder="e.g. 120000"
+                      className="w-full bg-slate-50 border border-slate-200/80 hover:border-slate-300 px-4 py-3 rounded-xl text-xs font-medium outline-none focus:border-indigo-500 focus:bg-white transition"
+                    />
+                    <p className="text-[10px] text-slate-500">
+                      {lang === "sw" 
+                        ? "AI yetu itajadili bei na wanunuzi na haitashuka chini ya bei hii." 
+                        : "Our AI will negotiate with buyers and never go below this price limit."}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
                     <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest">
                       {lang === "sw" ? "Stoki / Akiba" : "Stock Quantity"}
                     </label>
@@ -3690,6 +3774,9 @@ export default function SellerApp({
                           const data = await res.json();
                           if (data.description) {
                             setProdDescription(data.description);
+                            if (data.features && Array.isArray(data.features)) {
+                               setProdFeatures(data.features);
+                            }
                           } else {
                             alert(data.error || "Failed");
                           }
@@ -4189,6 +4276,27 @@ export default function SellerApp({
                             </button>
                           </div>
                         ))}
+                    </div>
+                  )}
+
+                  {realProductImages.length > 0 && (
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={handleAIFill}
+                        disabled={isGeneratingAILogic}
+                        className="flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-bold hover:opacity-90 transition disabled:opacity-50"
+                      >
+                        {isGeneratingAILogic ? (
+                          <Loader2 className="animate-spin w-5 h-5" />
+                        ) : (
+                          <Sparkles className="w-5 h-5" />
+                        )}
+                        {lang === "sw" ? "Jaza kwa AI (Uchawi)" : "AI Magic Auto-Fill"}
+                      </button>
+                      <p className="text-[10px] text-slate-500 text-center mt-2">
+                        {lang === "sw" ? "AI itachambua picha yako na kujaza taarifa zote moja kwa moja." : "AI will analyze your image and fill in the product details automatically."}
+                      </p>
                     </div>
                   )}
 

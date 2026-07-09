@@ -281,6 +281,8 @@ export interface Product {
   visible?: boolean;
   reviews?: Review[];
   sellerId?: string;
+  brokerId?: string;
+  brokerCommissionPercent?: number;
   sku?: string;
   warranty?: string;
   taxCode?: number;
@@ -288,6 +290,7 @@ export interface Product {
   vibe?: string;
   presentationStyle?: string;
   wholesaleTiers?: WholesaleTier[];
+  walkAwayPrice?: number;
   weightKg?: number;
   lengthCm?: number;
   widthCm?: number;
@@ -328,6 +331,32 @@ export interface Promotion {
   badgeText?: string;
 }
 
+export interface SmartBundle {
+  id: string;
+  sellerId: string;
+  name: string;
+  description?: string;
+  items: { productId: string; quantity: number }[];
+  discountPercentage: number;
+  active: boolean;
+  createdAt: number;
+}
+
+export interface RFQ {
+  id: string;
+  buyerId: string;
+  sellerId: string;
+  productId: string;
+  requestedQuantity: number;
+  targetPrice: number;
+  currentOfferPrice?: number;
+  status: 'pending' | 'negotiating' | 'accepted' | 'rejected' | 'completed';
+  aiNegotiationActive: boolean;
+  messages: { sender: 'buyer' | 'seller' | 'ai', message: string, timestamp: number }[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface OrderItem {
   productId: string;
   name: string;
@@ -356,6 +385,8 @@ export interface Order {
   deliveryZoneName?: string;
   deliveryFee?: number;
   deliveryEta?: string;
+  brokerId?: string;
+  brokerCommissionAmount?: number;
 }
 
 export interface OrderStatusLog {

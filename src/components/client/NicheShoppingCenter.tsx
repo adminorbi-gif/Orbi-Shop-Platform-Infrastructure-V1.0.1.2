@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { DynamicPropertyFilter, DynamicFilters } from "./DynamicPropertyFilter";
 import { parseKeyAttributes } from "../../utils/propertyExtractor";
 import { WhatAreYouLookingFor } from "../../pages/ClientApp/components/WhatAreYouLookingFor";
+import { ClientSmartBundles, generateSmartBundles, ClientSmartBundleCard } from "../../pages/ClientApp/components/ClientSmartBundles";
 
 const getStringHash = (str: string): number => {
   let hash = 0;
@@ -65,6 +66,8 @@ interface NicheShoppingCenterProps {
   activeDynamicFilters: DynamicFilters;
   setActiveDynamicFilters: (filters: DynamicFilters) => void;
   onOpenAIChat?: (initialMsg?: string) => void;
+  onAddToCart?: (p: Product, openCart?: boolean, quantity?: number) => void;
+  onSelectBundle?: (bundle: any) => void;
   nicheColorMap?: Record<string, { 
     hue: number; 
     textClass: string; 
@@ -94,6 +97,8 @@ export const NicheShoppingCenter: React.FC<NicheShoppingCenterProps> = ({
   activeDynamicFilters = {},
   setActiveDynamicFilters,
   onOpenAIChat,
+  onAddToCart,
+  onSelectBundle,
   nicheColorMap,
 }) => {
 
@@ -292,6 +297,10 @@ export const NicheShoppingCenter: React.FC<NicheShoppingCenterProps> = ({
       });
     });
   }
+
+  const smartBundles = React.useMemo(() => {
+    return generateSmartBundles(products, lang, nicheObj.name, selectedFamily);
+  }, [products, lang, nicheObj.name, selectedFamily]);
 
   const getThemeByNiche = (nicheName: string) => {
     switch (nicheName) {
@@ -673,12 +682,14 @@ export const NicheShoppingCenter: React.FC<NicheShoppingCenterProps> = ({
               </AnimatePresence>
             </div>
           )}
-
+          
           {displayProducts.length > 0 ? (
           <div className="orbi-product-list-grid py-1">
             <AnimatePresence mode="popLayout">
               {(() => {
                 const elements: React.ReactNode[] = [];
+                const bundlesToInject = [...smartBundles];
+
                 displayProducts.forEach((p, idx) => {
                   elements.push(
                     <motion.div
@@ -692,6 +703,32 @@ export const NicheShoppingCenter: React.FC<NicheShoppingCenterProps> = ({
                       {renderProductCard(p)}
                     </motion.div>
                   );
+
+                  // Inject a bundle card every 4 products
+                  if ((idx + 1) % 4 === 0 && bundlesToInject.length > 0) {
+                    const bundle = bundlesToInject.shift();
+                    if (bundle) {
+                      elements.push(
+                        <motion.div
+                          key={`mixed-bundle-${bundle.id}`}
+                          layout
+                          initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <ClientSmartBundleCard
+                            bundle={bundle}
+                            lang={lang}
+                            products={products}
+                            onSelectProduct={(prod) => onSelectProduct(prod.id)}
+                            onAddToCart={onAddToCart}
+                            onSelectBundle={onSelectBundle}
+                          />
+                        </motion.div>
+                      );
+                    }
+                  }
 
                   // Inject an ad every 6 products, or at index 3 and 9, etc., dynamically
                   const adIndex = Math.floor(idx / 6);
@@ -769,6 +806,33 @@ export const NicheShoppingCenter: React.FC<NicheShoppingCenterProps> = ({
                     );
                   }
                 });
+
+                // Append leftover bundles if any are still in queue
+                while (bundlesToInject.length > 0) {
+                  const bundle = bundlesToInject.shift();
+                  if (bundle) {
+                    elements.push(
+                      <motion.div
+                        key={`mixed-bundle-end-${bundle.id}`}
+                        layout
+                        initial={{ opacity: 0, scale: 0.9, y: 15 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <ClientSmartBundleCard
+                          bundle={bundle}
+                          lang={lang}
+                          products={products}
+                          onSelectProduct={(prod) => onSelectProduct(prod.id)}
+                          onAddToCart={onAddToCart}
+                          onSelectBundle={onSelectBundle}
+                        />
+                      </motion.div>
+                    );
+                  }
+                }
+
                 return elements;
               })()}
             </AnimatePresence>

@@ -191,7 +191,9 @@ router.get("/", requireAuth, async (req, res) => {
         deliveryZoneId: o.delivery_zone_id || undefined,
         deliveryZoneName: o.delivery_zone_name || undefined,
         deliveryFee: Number(o.delivery_fee || 0),
-        deliveryEta: o.delivery_eta || undefined
+        deliveryEta: o.delivery_eta || undefined,
+        brokerId: o.broker_id || undefined,
+        brokerCommissionAmount: o.broker_commission_amount ? Number(o.broker_commission_amount) : undefined
       };
     });
 
@@ -293,6 +295,34 @@ router.post("/", requireAuth, requireRole("admin", "staff"), async (req, res) =>
       }
       
       if (error) throw error;
+      
+      // Enterprise: Restoring stock on Cancel/Refund
+      if ((activeStatus === 'CANCELLED' || activeStatus === 'REFUNDED') && (previousStatus !== 'CANCELLED' && previousStatus !== 'REFUNDED')) {
+        try {
+          const { data: orderItems } = await supabase.from('order_items').select('*').eq('order_id', order.id);
+          if (orderItems && orderItems.length > 0) {
+            for (const item of orderItems) {
+              const qty = parseInt(item.quantity, 10) || 1;
+              const { data: prod } = await supabase.from('products').select('stock').eq('id', item.product_id).maybeSingle();
+              if (prod) {
+                const newStock = Math.max(0, (prod.stock || 0) + qty);
+                await supabase.from('products').update({ stock: newStock }).eq('id', item.product_id);
+                
+                await supabase.from('inventory_movements').insert({
+                  product_id: item.product_id,
+                  movement_type: 'return',
+                  quantity_change: qty,
+                  reference_id: `order_cancel_${order.id}`,
+                  actor_id: (req as any).user?.id || null,
+                  notes: `Restored stock from cancelled order`
+                });
+              }
+            }
+          }
+        } catch (restoreErr: any) {
+          console.error("[Inventory Ledger] Failed to restore stock for cancelled order:", restoreErr.message || restoreErr);
+        }
+      }
 
       // Trigger Orbi Talk Gateway Notifications
       try {
@@ -657,7 +687,9 @@ router.get("/:id", requireAuth, async (req, res) => {
       deliveryZoneId: o.delivery_zone_id || undefined,
       deliveryZoneName: o.delivery_zone_name || undefined,
       deliveryFee: Number(o.delivery_fee || 0),
-      deliveryEta: o.delivery_eta || undefined
+      deliveryEta: o.delivery_eta || undefined,
+      brokerId: o.broker_id || undefined,
+      brokerCommissionAmount: o.broker_commission_amount ? Number(o.broker_commission_amount) : undefined
     };
 
     res.json({ success: true, data: item });

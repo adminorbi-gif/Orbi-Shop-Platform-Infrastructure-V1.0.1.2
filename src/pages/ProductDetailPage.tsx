@@ -32,7 +32,8 @@ import {
   Truck,
   Calendar,
   MessageSquare,
-  MapPin
+  MapPin,
+  Bot
 } from "lucide-react";
 import { Lang } from "../lib/i18nClient";
 import { db } from "../lib/db";
@@ -48,6 +49,7 @@ import {
   normalizeDeliveryZones,
 } from "../lib/deliveryZones";
 import { motion } from "motion/react";
+import { NegotiationModal } from "../components/chat/NegotiationModal";
 import { slugify } from "../lib/slugify";
 
 // Inline Flag assets styled exactly as in the main app layout
@@ -215,6 +217,21 @@ export default function ProductDetailPage({
   onOpenAuth,
   sortedAdsList = []
 }: Props) {
+  const [isCartPulsing, setIsCartPulsing] = useState(false);
+  const prevCartCountRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const totalCount = (cart || []).reduce((acc, item) => acc + item.quantity, 0);
+    if (prevCartCountRef.current !== null && totalCount > prevCartCountRef.current) {
+      setIsCartPulsing(true);
+      const timer = setTimeout(() => {
+        setIsCartPulsing(false);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+    prevCartCountRef.current = totalCount;
+  }, [cart]);
+
   const lastVibeRef = useRef<number>(0);
   const triggerHaptic = () => {
     const now = Date.now();
@@ -341,6 +358,7 @@ export default function ProductDetailPage({
   const isOutOfStock = product.stock <= 0;
 
   const [qty, setQty] = useState(1);
+  const [isNegotiating, setIsNegotiating] = useState(false);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(DEFAULT_DELIVERY_ZONES);
   const [selectedDeliveryZoneId, setSelectedDeliveryZoneId] = useState(DEFAULT_DELIVERY_ZONES[0].id);
   const selectedDeliveryZone = useMemo(() => {
@@ -706,11 +724,15 @@ export default function ProductDetailPage({
 
           {/* Dynamic Cart Badge (Opens Shop Cart Directly) */}
           {onOpenCart && (
-            <button
+            <motion.button
               onClick={() => {
                 onOpenCart();
                 onClose(); // Switch nicely
               }}
+              animate={isCartPulsing ? {
+                scale: [1, 1.25, 0.95, 1.1, 1],
+                transition: { duration: 0.6, ease: "easeInOut" }
+              } : {}}
               className="relative p-2.5 bg-white hover:bg-orange-50 text-orange-600 rounded-full transition shadow-md hover:-translate-y-0.5 border border-transparent cursor-pointer flex items-center justify-center shrink-0"
               title={lang === "sw" ? "Kikapu Chako" : "Check Your Cart"}
             >
@@ -720,7 +742,7 @@ export default function ProductDetailPage({
                   {cart.reduce((a, c) => a + c.quantity, 0)}
                 </span>
               )}
-            </button>
+            </motion.button>
           )}
         </div>
       </header>
@@ -1087,6 +1109,7 @@ export default function ProductDetailPage({
                   
                   <div className="relative shrink-0 flex items-center bg-white border border-slate-200 rounded-xl transition-colors hover:border-blue-300">
                     <MapPin size={14} className="text-slate-400 ml-2.5" />
+
                     <select 
                       className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer appearance-none py-2 pl-1.5 pr-8 w-full"
                       value={selectedDeliveryZoneId}
@@ -1218,6 +1241,18 @@ export default function ProductDetailPage({
                   </button>
                 )}
               </div>
+              
+              {!isOutOfStock && product.walkAwayPrice && product.walkAwayPrice < product.price && (
+                <div className="pt-2">
+                  <button
+                    onClick={() => setIsNegotiating(true)}
+                    className="w-full min-h-12 border-2 border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 text-indigo-700 rounded-2xl font-black transition-all flex items-center justify-center gap-2 px-4 shadow-sm text-sm cursor-pointer"
+                  >
+                    <Bot size={18} />
+                    <span>{lang === "sw" ? "Jadili Bei na AI (Negotiate)" : "Negotiate Price with AI"}</span>
+                  </button>
+                </div>
+              )}
 
               {/* Guarantees */}
               <div className="flex items-center gap-4 border-t border-slate-100 pt-4 mt-2 flex-wrap">
@@ -2088,6 +2123,17 @@ export default function ProductDetailPage({
             </div>
           )}
         </div>
+      )}
+      {isNegotiating && (
+        <NegotiationModal
+          product={product}
+          onClose={() => setIsNegotiating(false)}
+          lang={lang}
+          onAddCart={(p, q, price) => {
+            onAdd({...p, price}, false, q);
+            setIsNegotiating(false);
+          }}
+        />
       )}
     </div>
   );
