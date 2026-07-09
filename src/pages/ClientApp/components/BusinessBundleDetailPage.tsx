@@ -564,16 +564,24 @@ export const BusinessBundleDetailPage: React.FC<BusinessBundleDetailPageProps> =
         
         {/* Navigation Breadcrumb with Elegant Layout */}
         <div className="mb-5 flex items-center justify-between border-b border-slate-200/40 pb-4">
-          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-            <span onClick={onClose} className="cursor-pointer hover:text-[#ff4c00] transition">Home</span>
-            <ChevronRight size={11} className="text-slate-400" />
-            <span onClick={onClose} className="cursor-pointer hover:text-[#ff4c00] transition">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+            <button 
+              onClick={onClose} 
+              className="mr-1 text-[#ff4c00] hover:opacity-80 flex items-center gap-0.5 cursor-pointer font-black border-none bg-transparent p-0 transition-all"
+            >
+              <ChevronLeft size={13} className="stroke-[2.5]" />
+              <span>{lang === 'sw' ? 'Rudi' : 'Back'}</span>
+            </button>
+            <span className="text-slate-300 sm:hidden">|</span>
+            <span onClick={onClose} className="cursor-pointer hover:text-[#ff4c00] transition hidden sm:inline">Home</span>
+            <ChevronRight size={11} className="text-slate-400 hidden sm:inline" />
+            <span onClick={onClose} className="cursor-pointer hover:text-[#ff4c00] transition hidden sm:inline">
               {lang === 'sw' ? 'Mikusanyiko' : 'Bundles'}
             </span>
-            <ChevronRight size={11} className="text-slate-400" />
+            <ChevronRight size={11} className="text-slate-400 hidden sm:inline" />
             <span className="text-slate-500">{getNicheName()}</span>
             <ChevronRight size={11} className="text-slate-400" />
-            <span className="line-clamp-1 max-w-[360px] text-slate-900 font-extrabold">{bundle.name}</span>
+            <span className="line-clamp-1 max-w-[120px] xs:max-w-[180px] sm:max-w-[360px] text-slate-900 font-extrabold">{bundle.name}</span>
           </div>
 
           <button
@@ -586,7 +594,7 @@ export const BusinessBundleDetailPage: React.FC<BusinessBundleDetailPageProps> =
                 alert(lang === 'sw' ? 'Kiungo kimenakiliwa!' : 'Link copied!');
               }
             }}
-            className="flex items-center gap-1.5 text-xs font-black text-slate-500 hover:text-[#ff4c00] transition uppercase tracking-wider cursor-pointer"
+            className="hidden sm:flex items-center gap-1.5 text-xs font-black text-slate-500 hover:text-[#ff4c00] transition uppercase tracking-wider cursor-pointer"
           >
             <span>Share</span>
             <Share2 size={13} className="text-slate-500" />
@@ -987,7 +995,7 @@ export const BusinessBundleDetailPage: React.FC<BusinessBundleDetailPageProps> =
                 <div>
                   <h2 className="text-lg font-black tracking-tight text-slate-950 flex items-center gap-2">
                     <Package size={18} className="text-[#ff4c00]" />
-                    {lang === 'sw' ? 'Kimejumuishwa kwenye kifurushi' : 'Included in this bundle'}
+                    {lang === 'sw' ? 'Bidhaa za kifurushi' : 'Included in this bundle'}
                   </h2>
                   <p className="mt-1 text-xs text-slate-500">
                     {lang === 'sw' ? 'Bidhaa hizi zimekusanywa pamoja na kufungashwa kama oda moja.' : 'These products are compiled together and delivered as a single package.'}
